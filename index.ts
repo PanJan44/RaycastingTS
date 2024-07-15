@@ -1,5 +1,6 @@
 const GRID_ROWS = 10;
 const GRID_COLS = 10;
+const EPS = 1e-3;
 
 class Vector2 {
   x: number;
@@ -59,42 +60,50 @@ function drawLine(ctx: CanvasRenderingContext2D, from: Vector2, to: Vector2) {
   ctx.stroke();
 }
 
+function getTilePositionBasedOnHittingPoint(p1: Vector2, p2: Vector2): Vector2 {
+  const delta = p2.sub(p1);
+  return new Vector2(Math.floor(p2.x + Math.sign(delta.x) * EPS), Math.floor(p2.y + Math.sign(delta.y)) * EPS)
+}
+
 function getClosestPointBasedOnSlope(coord: number, delta: number): number {
-  if (delta > 0) return Math.ceil(coord);
-  if (delta < 0) return Math.floor(coord);
+  if (delta > 0) return Math.ceil(coord + Math.sign(delta) * EPS);
+  if (delta < 0) return Math.floor(coord + Math.sign(delta) * EPS);
 
   return coord;
 }
 
-function testRay(ctx: CanvasRenderingContext2D, p1: Vector2, p2: Vector2): Vector2 {
+function castRay(p1: Vector2, p2: Vector2): Vector2 {
   //y = a*x + b
   //b = y - a*x
   //x = (y - b)/a
   const delta = p2.sub(p1);
+
+  if (delta.x == 0) {
+    const x3 = p2.x
+    const y3 = getClosestPointBasedOnSlope(p2.y, delta.y);
+    return new Vector2(x3, y3);
+  }
+
+  const a = delta.y / delta.x;
+  const b = p1.y - a * p1.x;
   let p3 = p2;
-
-  if (delta.x != 0) {
-    const a = delta.y / delta.x;
-    const b = p1.y - a * p1.x;
-    {
-      const x3 = getClosestPointBasedOnSlope(p2.x, delta.x);
-      const y3 = a * x3 + b;
-      p3 = new Vector2(x3, y3);
-      //ctx.fillStyle = "green";
-      //fillCircle(ctx, new Vector2(x3, y3), 0.1);
-    }
-
-    if (a == 0) return;
-
+  {
+    const x3 = getClosestPointBasedOnSlope(p2.x, delta.x);
+    const y3 = a * x3 + b;
+    p3 = new Vector2(x3, y3);
+  }
+  if (a === 0) {
+    const y3 = p2.y;
+    const x3 = getClosestPointBasedOnSlope(p2.x, delta.x);
+    p3 = new Vector2(x3, y3);
+  }
+  else {
     const y3 = getClosestPointBasedOnSlope(p2.y, delta.y);
     const x3 = (y3 - b) / a;
     const p3temp = new Vector2(x3, y3);
     if (p2.distanceTo(p3temp) < p2.distanceTo(p3)) {
       p3 = p3temp;
     }
-
-    //ctx.fillStyle = "blue";
-    //fillCircle(ctx, new Vector2(x3, y3), 0.1);
   }
 
   return p3;
@@ -117,16 +126,23 @@ function drawGrid(ctx: CanvasRenderingContext2D, p2: Vector2 | undefined) {
     drawLine(ctx, new Vector2(0, y), new Vector2(GRID_ROWS, y));
   }
 
-  const p1 = new Vector2(GRID_COLS * 0.43, GRID_ROWS * 0.33);
-
+  let p1 = new Vector2(GRID_COLS * 0.43, GRID_ROWS * 0.33);
   ctx.fillStyle = "red";
   fillCircle(ctx, p1, 0.2);
-  if (p2 !== undefined) {
+  if (p2 === undefined) return;
+
+  for (; ;) {
     fillCircle(ctx, p2, 0.2);
     drawLine(ctx, p1, p2);
-    const vec = testRay(ctx, p1, p2);
     ctx.fillStyle = "green";
-    fillCircle(ctx, vec, 0.1);
+    const tilePos = getTilePositionBasedOnHittingPoint(p1, p2);
+    if (tilePos.x < 0 || tilePos.x > GRID_COLS || tilePos.y < 0 || tilePos.y > GRID_ROWS) {
+      console.log(`tile pos: ${tilePos.x}, ${tilePos.y}`);
+      break;
+    }
+    const vec = castRay(p1, p2);
+    p1 = p2;
+    p2 = vec;
   }
 
 }
@@ -160,4 +176,5 @@ if (ctx === null)
 //Separete files for classes like Vector2, Player, Game...
 //Fix imports (probably need server)
 //Create class that constains extension methods for Context type
+//Refactor testRay function (too many things are going in there)
 
