@@ -47,25 +47,41 @@ function drawLine(ctx, from, to) {
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
 }
-function getClosestPointBasedOnSlope(x, dx) {
-    if (dx > 0)
-        return Math.ceil(x);
-    if (dx < 0)
-        return Math.floor(x);
-    return x;
+function getClosestPointBasedOnSlope(coord, delta) {
+    if (delta > 0)
+        return Math.ceil(coord);
+    if (delta < 0)
+        return Math.floor(coord);
+    return coord;
 }
-function castRay(p1, p2) {
+function testRay(ctx, p1, p2) {
     //y = a*x + b
     //b = y - a*x
+    //x = (y - b)/a
     const delta = p2.sub(p1);
+    let p3 = p2;
     if (delta.x != 0) {
         const a = delta.y / delta.x;
         const b = p1.y - a * p1.x;
-        const x3 = getClosestPointBasedOnSlope(p2.x, delta.x);
-        const y3 = a * x3 + b;
-        return new Vector2(x3, y3);
+        {
+            const x3 = getClosestPointBasedOnSlope(p2.x, delta.x);
+            const y3 = a * x3 + b;
+            p3 = new Vector2(x3, y3);
+            //ctx.fillStyle = "green";
+            //fillCircle(ctx, new Vector2(x3, y3), 0.1);
+        }
+        if (a == 0)
+            return;
+        const y3 = getClosestPointBasedOnSlope(p2.y, delta.y);
+        const x3 = (y3 - b) / a;
+        const p3temp = new Vector2(x3, y3);
+        if (p2.distanceTo(p3temp) < p2.distanceTo(p3)) {
+            p3 = p3temp;
+        }
+        //ctx.fillStyle = "blue";
+        //fillCircle(ctx, new Vector2(x3, y3), 0.1);
     }
-    return p2;
+    return p3;
 }
 function drawGrid(ctx, p2) {
     ctx.reset();
@@ -86,8 +102,9 @@ function drawGrid(ctx, p2) {
     if (p2 !== undefined) {
         fillCircle(ctx, p2, 0.2);
         drawLine(ctx, p1, p2);
-        const p3 = castRay(p1, p2);
-        fillCircle(ctx, p3, 0.1);
+        const vec = testRay(ctx, p1, p2);
+        ctx.fillStyle = "green";
+        fillCircle(ctx, vec, 0.1);
     }
 }
 const game = document.getElementById("map");
