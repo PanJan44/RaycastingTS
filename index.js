@@ -2,6 +2,7 @@
 const GRID_ROWS = 10;
 const GRID_COLS = 10;
 const EPS = 1e-3;
+let scene = Array(GRID_ROWS).fill(0).map(() => Array(GRID_COLS).fill(0));
 class Vector2 {
     x;
     y;
@@ -50,7 +51,7 @@ function drawLine(ctx, from, to) {
 }
 function getTilePositionBasedOnHittingPoint(p1, p2) {
     const delta = p2.sub(p1);
-    return new Vector2(Math.floor(p2.x + Math.sign(delta.x) * EPS), Math.floor(p2.y + Math.sign(delta.y)) * EPS);
+    return new Vector2(Math.floor(p2.x + Math.sign(delta.x) * EPS), Math.floor(p2.y + Math.sign(delta.y) * EPS));
 }
 function getClosestPointBasedOnSlope(coord, delta) {
     if (delta > 0)
@@ -92,6 +93,47 @@ function castRay(p1, p2) {
     }
     return p3;
 }
+function drawRayAndIntersections(ctx, p2) {
+    let p1 = new Vector2(GRID_COLS * 0.43, GRID_ROWS * 0.33);
+    ctx.fillStyle = "red";
+    fillCircle(ctx, p1, 0.2);
+    if (p2 === undefined)
+        return;
+    for (;;) {
+        fillCircle(ctx, p2, 0.1);
+        drawLine(ctx, p1, p2);
+        ctx.fillStyle = "green";
+        const tilePos = getTilePositionBasedOnHittingPoint(p1, p2);
+        if (tilePos.x < 0 || tilePos.x >= GRID_COLS || tilePos.y < 0 || tilePos.y >= GRID_ROWS
+            || scene[tilePos.y][tilePos.x] == 1) {
+            break;
+        }
+        const vec = castRay(p1, p2);
+        p1 = p2;
+        p2 = vec;
+    }
+}
+function initScene(ctx) {
+    scene[1][8] = 1;
+    scene[1][2] = 1;
+    scene[1][3] = 1;
+    scene[1][4] = 1;
+    scene[1][5] = 1;
+    scene[5][8] = 1;
+    scene[6][8] = 1;
+    scene[7][8] = 1;
+    scene[8][8] = 1;
+    scene[7][1] = 1;
+    scene[7][2] = 1;
+    for (let y = 0; y < GRID_ROWS; y++) {
+        for (let x = 0; x < GRID_COLS; x++) {
+            if (scene[y][x] != 0) {
+                ctx.fillStyle = "blue";
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+    }
+}
 function drawGrid(ctx, p2) {
     ctx.reset();
     ctx.fillStyle = "#888";
@@ -99,30 +141,14 @@ function drawGrid(ctx, p2) {
     ctx.scale(ctx.canvas.width / GRID_COLS, ctx.canvas.height / GRID_ROWS);
     ctx.lineWidth = 0.05;
     ctx.strokeStyle = "#111";
+    initScene(ctx);
     for (let x = 0; x <= GRID_COLS; x++) {
         drawLine(ctx, new Vector2(x, 0), new Vector2(x, GRID_COLS));
     }
     for (let y = 0; y <= GRID_ROWS; y++) {
         drawLine(ctx, new Vector2(0, y), new Vector2(GRID_ROWS, y));
     }
-    let p1 = new Vector2(GRID_COLS * 0.43, GRID_ROWS * 0.33);
-    ctx.fillStyle = "red";
-    fillCircle(ctx, p1, 0.2);
-    if (p2 === undefined)
-        return;
-    for (;;) {
-        fillCircle(ctx, p2, 0.2);
-        drawLine(ctx, p1, p2);
-        ctx.fillStyle = "green";
-        const tilePos = getTilePositionBasedOnHittingPoint(p1, p2);
-        if (tilePos.x < 0 || tilePos.x > GRID_COLS || tilePos.y < 0 || tilePos.y > GRID_ROWS) {
-            console.log(`tile pos: ${tilePos.x}, ${tilePos.y}`);
-            break;
-        }
-        const vec = castRay(p1, p2);
-        p1 = p2;
-        p2 = vec;
-    }
+    drawRayAndIntersections(ctx, p2);
 }
 const game = document.getElementById("map");
 if (game === null)
