@@ -1,7 +1,6 @@
-const GRID_ROWS = 10;
-const GRID_COLS = 10;
 const EPS = 1e-3;
-let scene = Array(GRID_ROWS).fill(0).map(() => Array(GRID_COLS).fill(0));
+const FOV = Math.PI / 2;
+const CLIPPING_DISTANCE = 0.8;
 
 class Vector2 {
   x: number;
@@ -10,6 +9,16 @@ class Vector2 {
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
+  }
+
+  static fromAngle(angle: number): Vector2 {
+    const vec = new Vector2(Math.cos(angle), Math.sin(angle));
+    console.log(`fromAngleVec:: x: ${vec.x}, y: ${vec.y}`)
+    return new Vector2(Math.cos(angle), Math.sin(angle));
+  }
+
+  toArray(): [number, number] {
+    return [this.x, this.y];
   }
 
   length(): number {
@@ -46,6 +55,24 @@ class Vector2 {
   mul(that: Vector2): Vector2 {
     return new Vector2(this.x * that.x, this.y * that.y);
   }
+
+  rot90(): Vector2 {
+    return new Vector2(-this.y, this.x);
+  }
+}
+
+class Player {
+  position: Vector2;
+  direction: number;
+
+  constructor(position: Vector2, direction: number) {
+    this.position = position;
+    this.direction = direction;
+  }
+}
+
+function canvasSize(ctx: CanvasRenderingContext2D): Vector2 {
+  return new Vector2(ctx.canvas.width, ctx.canvas.height);
 }
 
 function fillCircle(ctx: CanvasRenderingContext2D, center: Vector2, radius: number) {
@@ -110,72 +137,88 @@ function castRay(p1: Vector2, p2: Vector2): Vector2 {
   return p3;
 }
 
-function drawRayAndIntersections(ctx: CanvasRenderingContext2D, p2: Vector2 | undefined) {
-  let p1 = new Vector2(GRID_COLS * 0.43, GRID_ROWS * 0.33);
-  ctx.fillStyle = "red";
-  fillCircle(ctx, p1, 0.2);
-  if (p2 === undefined) return;
-
-  for (; ;) {
-    fillCircle(ctx, p2, 0.1);
-    drawLine(ctx, p1, p2);
-    ctx.fillStyle = "green";
-    const tilePos = getTilePositionBasedOnHittingPoint(p1, p2);
-    if (tilePos.x < 0 || tilePos.x >= GRID_COLS || tilePos.y < 0 || tilePos.y >= GRID_ROWS
-      || scene[tilePos.y][tilePos.x] == 1) {
-      break;
-    }
-    const vec = castRay(p1, p2);
-    p1 = p2;
-    p2 = vec;
-  }
-
+//TODO raczej do wywalenia?
+function drawRayAndIntersections(ctx: CanvasRenderingContext2D, scene: Scene) {
 }
 
-function initScene(ctx: CanvasRenderingContext2D) {
-  scene[1][8] = 1;
-  scene[1][2] = 1; scene[1][3] = 1; scene[1][4] = 1; scene[1][5] = 1;
-  scene[5][8] = 1; scene[6][8] = 1; scene[7][8] = 1; scene[8][8] = 1;
-  scene[7][1] = 1; scene[7][2] = 1;
-  for (let y = 0; y < GRID_ROWS; y++) {
-    for (let x = 0; x < GRID_COLS; x++) {
-      if (scene[y][x] != 0) {
-        ctx.fillStyle = "blue";
+function initScene(ctx: CanvasRenderingContext2D, scene: Scene) {
+  const gridSize = sceneSize(scene);
+
+  for (let y = 0; y < gridSize.y; y++) {
+    for (let x = 0; x < gridSize.x; x++) {
+      const wallColor = scene[y][x]; //TypeScript (or JS actually) goes WTF...
+      if (wallColor !== null) {
+        ctx.fillStyle = wallColor;
         ctx.fillRect(x, y, 1, 1);
       }
     }
   }
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, p2: Vector2 | undefined) {
-  ctx.reset();
+type Scene = Array<Array<string | null>>
 
+function sceneSize(scene: Scene): Vector2 {
+  const y = scene.length;
+  let x = scene[0].length;
+  for (let row of scene) {
+    x = Math.max(x, row.length);
+  }
+
+  return new Vector2(x, y);
+}
+
+function minimap(ctx: CanvasRenderingContext2D, position: Vector2, size: Vector2, scene: Scene) {
+  ctx.save();
+
+  const gridSize = sceneSize(scene);
   ctx.fillStyle = "#888";
-  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-
-  ctx.scale(ctx.canvas.width / GRID_COLS, ctx.canvas.height / GRID_ROWS);
+  ctx.fillRect(0, 0, ...canvasSize(ctx).toArray());
+  ctx.translate(...position.toArray());
+  ctx.scale(...size.div(gridSize).toArray());
   ctx.lineWidth = 0.05;
   ctx.strokeStyle = "#111"
-  initScene(ctx);
+  initScene(ctx, scene);
 
-  for (let x = 0; x <= GRID_COLS; x++) {
-    drawLine(ctx, new Vector2(x, 0), new Vector2(x, GRID_COLS));
+  for (let x = 0; x <= gridSize.x; x++) {
+    drawLine(ctx, new Vector2(x, 0), new Vector2(x, gridSize.y));
   }
 
-  for (let y = 0; y <= GRID_ROWS; y++) {
-    drawLine(ctx, new Vector2(0, y), new Vector2(GRID_ROWS, y));
+  for (let y = 0; y <= gridSize.y; y++) {
+    drawLine(ctx, new Vector2(0, y), new Vector2(gridSize.x, y));
   }
 
-  drawRayAndIntersections(ctx, p2);
+  const player = new Player(gridSize.mul(new Vector2(0.5, 0.5)), 2);
+  ctx.fillStyle = "red";
+  fillCircle(ctx, player.position, 0.3);
 
+
+  ctx.strokeStyle = "red";
+  const pos = player.position;
+  const dirVecFromAngle = Vector2.fromAngle(player.direction);
+  const dirVector = new Vector2(...pos.add(dirVecFromAngle).toArray())
+  drawLine(ctx, pos, dirVector);
+
+  const l = Math.tan(FOV * 0.5) * dirVecFromAngle.length();
+  //looking at player's vision area these are the vectors perpedicular to player's direction
+  const v1 = dirVecFromAngle.rot90().scale(l).add(dirVector);
+  const v2 = dirVecFromAngle.rot90().scale(-1).scale(l).add(dirVector);
+
+  drawLine(ctx, dirVector, v1);
+  drawLine(ctx, dirVector, v2);
+  drawLine(ctx, pos, v1);
+  drawLine(ctx, pos, v2);
+
+  ctx.restore();
 }
 
 const game = document.getElementById("map") as (HTMLCanvasElement | null);
 if (game === null)
   throw new Error("No canvas with id `game` is found");
 
-game.width = 800;
-game.height = 800;
+const factor = 50;
+
+game.width = 16 * factor;
+game.height = 9 * factor;
 
 const ctx = game?.getContext("2d");
 if (ctx === null)
@@ -183,16 +226,22 @@ if (ctx === null)
 
 
 (() => {
-  let p2 = undefined;
-  game.addEventListener("mousemove", e => {
-    p2 = new Vector2(e.offsetX, e.offsetY)
-      .div(new Vector2(game.height, game.width)) //now we've got coords from 0 to 1
-      .mul(new Vector2(GRID_COLS, GRID_ROWS)); //now we've got coords from 0 to 10
+  const scene = [
+    [null, null, null, "blue", "blue", "blue", "blue", "orange"],
+    [null, null, null, null, null, null, null, "orange"],
+    [null, null, null, null, null, null, null, "orange"],
+    [null, "green", "green", null, null, null, null, "orange"],
+    [null, null, null, null, null, null, null, "orange"],
+    [null, null, null, null, null, null, null, "orange"],
+    [null, "purple", "purple", "purple", null, null, null, "orange"],
+    [null, null, null, null, null, null, null, "orange"],
+  ]
 
-    drawGrid(ctx, p2);
-  })
+  const minimapPosition = new Vector2(10, 10)
+  const cellSize = ctx.canvas.width * 0.03;
+  const minimapSize = sceneSize(scene).scale(cellSize);
 
-  drawGrid(ctx, p2);
+  minimap(ctx, minimapPosition, minimapSize, scene);
 })()
 
 
