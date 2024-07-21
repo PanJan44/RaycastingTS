@@ -2,6 +2,7 @@
 const EPS = 1e-3;
 const FOV = Math.PI / 2;
 const CLIPPING_DISTANCE = 0.8;
+const PLAYER_MOVE_STEP = 0.3;
 class Vector2 {
     x;
     y;
@@ -10,8 +11,6 @@ class Vector2 {
         this.y = y;
     }
     static fromAngle(angle) {
-        const vec = new Vector2(Math.cos(angle), Math.sin(angle));
-        console.log(`fromAngleVec:: x: ${vec.x}, y: ${vec.y}`);
         return new Vector2(Math.cos(angle), Math.sin(angle));
     }
     toArray() {
@@ -55,6 +54,15 @@ class Player {
         this.position = position;
         this.direction = direction;
     }
+    fovRangePoints() {
+        const dirVecFromAngle = Vector2.fromAngle(this.direction);
+        const dirVector = new Vector2(...this.position.add(dirVecFromAngle).toArray());
+        const l = Math.tan(FOV * 0.5) * dirVecFromAngle.length();
+        //looking at player's vision area these are the vectors perpedicular to player's direction
+        const v1 = dirVecFromAngle.rot90().scale(l).add(dirVector);
+        const v2 = dirVecFromAngle.rot90().scale(-1).scale(l).add(dirVector);
+        return [v1, v2];
+    }
 }
 function canvasSize(ctx) {
     return new Vector2(ctx.canvas.width, ctx.canvas.height);
@@ -81,7 +89,7 @@ function getClosestPointBasedOnSlope(coord, delta) {
         return Math.floor(coord + Math.sign(delta) * EPS);
     return coord;
 }
-function castRay(p1, p2) {
+function rayStep(p1, p2) {
     //y = a*x + b
     //b = y - a*x
     //x = (y - b)/a
@@ -114,6 +122,9 @@ function castRay(p1, p2) {
     }
     return p3;
 }
+function castRay(p1, p2, scene) {
+    throw new Error("castRay: not implemented");
+}
 //TODO raczej do wywalenia?
 function drawRayAndIntersections(ctx, scene) {
 }
@@ -137,11 +148,9 @@ function sceneSize(scene) {
     }
     return new Vector2(x, y);
 }
-function minimap(ctx, position, size, scene) {
+function renderMinimap(ctx, position, size, scene, player) {
     ctx.save();
     const gridSize = sceneSize(scene);
-    ctx.fillStyle = "#888";
-    ctx.fillRect(0, 0, ...canvasSize(ctx).toArray());
     ctx.translate(...position.toArray());
     ctx.scale(...size.div(gridSize).toArray());
     ctx.lineWidth = 0.05;
@@ -153,23 +162,23 @@ function minimap(ctx, position, size, scene) {
     for (let y = 0; y <= gridSize.y; y++) {
         drawLine(ctx, new Vector2(0, y), new Vector2(gridSize.x, y));
     }
-    const player = new Player(gridSize.mul(new Vector2(0.5, 0.5)), 2);
     ctx.fillStyle = "red";
-    fillCircle(ctx, player.position, 0.3);
+    fillCircle(ctx, player.position, 0.2);
+    const [v1, v2] = player.fovRangePoints();
     ctx.strokeStyle = "red";
-    const pos = player.position;
-    const dirVecFromAngle = Vector2.fromAngle(player.direction);
-    const dirVector = new Vector2(...pos.add(dirVecFromAngle).toArray());
-    drawLine(ctx, pos, dirVector);
-    const l = Math.tan(FOV * 0.5) * dirVecFromAngle.length();
-    //looking at player's vision area these are the vectors perpedicular to player's direction
-    const v1 = dirVecFromAngle.rot90().scale(l).add(dirVector);
-    const v2 = dirVecFromAngle.rot90().scale(-1).scale(l).add(dirVector);
-    drawLine(ctx, dirVector, v1);
-    drawLine(ctx, dirVector, v2);
-    drawLine(ctx, pos, v1);
-    drawLine(ctx, pos, v2);
+    //drawLine(ctx, pos, dirVector);
+    drawLine(ctx, v1, v2);
+    drawLine(ctx, player.position, v1);
+    drawLine(ctx, player.position, v2);
     ctx.restore();
+}
+function renderGame(ctx, player, scene) {
+    ctx.fillStyle = "#888";
+    ctx.fillRect(0, 0, ...canvasSize(ctx).toArray());
+    const minimapPosition = new Vector2(10, 10);
+    const cellSize = ctx.canvas.width * 0.03;
+    const minimapSize = sceneSize(scene).scale(cellSize);
+    renderMinimap(ctx, minimapPosition, minimapSize, scene, player);
 }
 const game = document.getElementById("map");
 if (game === null)
@@ -191,10 +200,33 @@ if (ctx === null)
         [null, "purple", "purple", "purple", null, null, null, "orange"],
         [null, null, null, null, null, null, null, "orange"],
     ];
-    const minimapPosition = new Vector2(10, 10);
-    const cellSize = ctx.canvas.width * 0.03;
-    const minimapSize = sceneSize(scene).scale(cellSize);
-    minimap(ctx, minimapPosition, minimapSize, scene);
+    const player = new Player(sceneSize(scene).mul(new Vector2(0.5, 0.5)), 2);
+    window.addEventListener("keypress", (e) => {
+        switch (e.key) {
+            case 'a':
+                {
+                    player.direction -= Math.PI * 0.1;
+                }
+                break;
+            case 'd':
+                {
+                    player.direction += Math.PI * 0.1;
+                }
+                break;
+            case 'w':
+                {
+                    player.position = player.position.add(Vector2.fromAngle(player.direction).scale(PLAYER_MOVE_STEP));
+                }
+                break;
+            case 's':
+                {
+                    player.position = player.position.sub(Vector2.fromAngle(player.direction).scale(PLAYER_MOVE_STEP));
+                }
+                break;
+        }
+        renderGame(ctx, player, scene);
+    });
+    renderGame(ctx, player, scene);
 })();
 //TODO
 //Separete files for classes like Vector2, Player, Game...
