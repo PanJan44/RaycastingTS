@@ -1,7 +1,8 @@
-const EPS = 1e-3;
+const EPS = 1e-6;
 const FOV = Math.PI / 2;
 const CLIPPING_DISTANCE = 0.8;
 const PLAYER_MOVE_STEP = 0.3;
+const RAYS_COUNT = 200;
 
 class Vector2 {
   x: number;
@@ -58,6 +59,34 @@ class Vector2 {
   rot90(): Vector2 {
     return new Vector2(-this.y, this.x);
   }
+
+  //linear interpolation
+  lerp(that: Vector2, t: number): Vector2 {
+    return that.sub(this).scale(t).add(this);
+  }
+}
+
+class Color {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+
+  constructor(r: number, g: number, b: number, a: number = 1) {
+    this.r = r;
+    this.g = g;
+    this.b = b;
+    this.a = a;
+  }
+
+  toRGBAString(): string {
+    return `rgba(${this.r},${this.g},${this.b},${this.a})`;
+  }
+
+  scale(value: number): Color {
+    return new Color(this.r * (1 - value), this.g * (1 - value), this.b * (1 - value), this.a * (1 - value));
+
+  }
 }
 
 class Player {
@@ -73,9 +102,10 @@ class Player {
     const dirVecFromAngle = Vector2.fromAngle(this.direction);
     const dirVector = new Vector2(...this.position.add(dirVecFromAngle).toArray())
     const l = Math.tan(FOV * 0.5) * dirVecFromAngle.length();
+
     //looking at player's vision area these are the vectors perpedicular to player's direction
-    const v1 = dirVecFromAngle.rot90().scale(l).add(dirVector);
-    const v2 = dirVecFromAngle.rot90().scale(-1).scale(l).add(dirVector);
+    const v1 = dirVecFromAngle.rot90().scale(-1).scale(l).add(dirVector);
+    const v2 = dirVecFromAngle.rot90().scale(l).add(dirVector);
 
     return [v1, v2];
   }
@@ -147,12 +177,57 @@ function rayStep(p1: Vector2, p2: Vector2): Vector2 {
   return p3;
 }
 
-function castRay(p1: Vector2, p2: Vector2, scene: Scene): Vector2 {
-  throw new Error("castRay: not implemented");
+function isInsideScene(p: Vector2, scene: Scene): boolean {
+  const size = sceneSize(scene);
+  return p.x >= 0 && p.x < size.x && p.y >= 0 && p.y < size.y;
 }
 
-//TODO raczej do wywalenia?
-function drawRayAndIntersections(ctx: CanvasRenderingContext2D, scene: Scene) {
+//to p2 to będzie wierzchołek tego trójkąta z pola widzenia (v1 lub v2)
+function castRay(p1: Vector2, p2: Vector2, scene: Scene): Vector2 {
+  while (true) {
+    const tilePos = getTilePositionBasedOnHittingPoint(p1, p2);
+    if (!isInsideScene(tilePos, scene) || scene[tilePos.y][tilePos.x])
+      break;
+    const p3 = rayStep(p1, p2);
+    p1 = p2;
+    p2 = p3;
+  }
+  return p2;
+}
+
+function renderCastRays(ctx: CanvasRenderingContext2D, scene: Scene, player: Player) {
+  const [v1, v2] = player.fovRangePoints();
+
+  for (let i = 0; i < RAYS_COUNT; i++) {
+    const stopPoint = castRay(player.position, v1.lerp(v2, i / RAYS_COUNT), scene);
+    ctx.strokeStyle = "white";
+    drawLine(ctx, player.position, stopPoint);
+  }
+}
+
+function renderScene(ctx: CanvasRenderingContext2D, scene: Scene, player: Player) {
+  const [v1, v2] = player.fovRangePoints();
+  const [canvasWidth, canvasHeight] = canvasSize(ctx).toArray();
+  const stripWidth = Math.ceil(canvasWidth / RAYS_COUNT);
+
+  for (let i = 0; i < RAYS_COUNT; i++) {
+    //this is the point through which a ray goes from a player's POV range
+    const p = v1.lerp(v2, i / RAYS_COUNT);
+    const stopPoint = castRay(player.position, p, scene);
+    const tilePos = getTilePositionBasedOnHittingPoint(player.position, stopPoint);
+
+    if (isInsideScene(stopPoint, scene) && isInsideScene(tilePos, scene)) {
+      const d = stopPoint.distanceTo(player.position);
+      const stripHeight = canvasHeight / d;
+
+      let wallColor = scene[tilePos.y][tilePos.x];
+      if (!wallColor) break;
+      wallColor = wallColor.scale(1 / d);
+      ctx.fillStyle = wallColor ? wallColor.toRGBAString() : '';
+      const rectY = (canvasHeight - stripHeight) * 0.3;
+      ctx.fillRect(i * stripWidth, rectY, stripWidth, stripHeight);
+    }
+  }
 }
 
 function initScene(ctx: CanvasRenderingContext2D, scene: Scene) {
@@ -162,14 +237,14 @@ function initScene(ctx: CanvasRenderingContext2D, scene: Scene) {
     for (let x = 0; x < gridSize.x; x++) {
       const wallColor = scene[y][x]; //TypeScript (or JS actually) goes WTF...
       if (wallColor !== null) {
-        ctx.fillStyle = wallColor;
+        ctx.fillStyle = wallColor.toRGBAString();
         ctx.fillRect(x, y, 1, 1);
       }
     }
   }
 }
 
-type Scene = Array<Array<string | null>>
+type Scene = Array<Array<Color | null>>
 
 function sceneSize(scene: Scene): Vector2 {
   const y = scene.length;
@@ -183,6 +258,7 @@ function sceneSize(scene: Scene): Vector2 {
 
 function renderMinimap(ctx: CanvasRenderingContext2D, position: Vector2, size: Vector2, scene: Scene, player: Player) {
   ctx.save();
+  renderScene(ctx, scene, player);
 
   const gridSize = sceneSize(scene);
   ctx.translate(...position.toArray());
@@ -199,15 +275,12 @@ function renderMinimap(ctx: CanvasRenderingContext2D, position: Vector2, size: V
     drawLine(ctx, new Vector2(0, y), new Vector2(gridSize.x, y));
   }
 
-  ctx.fillStyle = "red";
+  ctx.fillStyle = "white";
   fillCircle(ctx, player.position, 0.2);
-  const [v1, v2] = player.fovRangePoints();
 
+  ctx.lineWidth = 0.03;
   ctx.strokeStyle = "red";
-  //drawLine(ctx, pos, dirVector);
-  drawLine(ctx, v1, v2);
-  drawLine(ctx, player.position, v1);
-  drawLine(ctx, player.position, v2);
+  renderCastRays(ctx, scene, player);
 
   ctx.restore();
 }
@@ -216,8 +289,8 @@ function renderGame(ctx: CanvasRenderingContext2D, player: Player, scene: Scene)
   ctx.fillStyle = "#888";
   ctx.fillRect(0, 0, ...canvasSize(ctx).toArray());
 
-  const minimapPosition = new Vector2(10, 10)
-  const cellSize = ctx.canvas.width * 0.03;
+  const minimapPosition = new Vector2(0, 0);
+  const cellSize = ctx.canvas.width * 0.02;
   const minimapSize = sceneSize(scene).scale(cellSize);
   renderMinimap(ctx, minimapPosition, minimapSize, scene, player);
 }
@@ -226,7 +299,7 @@ const game = document.getElementById("map") as (HTMLCanvasElement | null);
 if (game === null)
   throw new Error("No canvas with id `game` is found");
 
-const factor = 50;
+const factor = 100;
 
 game.width = 16 * factor;
 game.height = 9 * factor;
@@ -237,15 +310,23 @@ if (ctx === null)
 
 
 (() => {
+  const blue = new Color(0, 0, 255);
+  const green = new Color(0, 255, 0);
+  const black = new Color(0, 0, 0);
+  const red = new Color(255, 0, 0);
   const scene = [
-    [null, null, null, "blue", "blue", "blue", "blue", "orange"],
-    [null, null, null, null, null, null, null, "orange"],
-    [null, null, null, null, null, null, null, "orange"],
-    [null, "green", "green", null, null, null, null, "orange"],
-    [null, null, null, null, null, null, null, "orange"],
-    [null, null, null, null, null, null, null, "orange"],
-    [null, "purple", "purple", "purple", null, null, null, "orange"],
-    [null, null, null, null, null, null, null, "orange"],
+    [blue, blue, blue, blue, blue, blue, blue, blue, blue, blue, blue, blue],
+    [null, null, null, null, null, null, null, null, null, null, null, blue],
+    [null, null, null, null, null, null, null, null, null, null, null, blue],
+    [null, red, null, null, null, null, null, null, null, null, null, blue],
+    [null, red, null, green, green, green, green, null, null, null, null, blue],
+    [null, null, null, black, null, null, null, green, null, null, null, blue],
+    [null, null, null, black, null, red, null, green, null, null, null, blue],
+    [green, null, null, black, null, red, null, green, null, null, null, blue],
+    [null, null, null, black, null, null, null, green, null, null, null, blue],
+    [null, null, null, null, null, null, null, null, null, null, null, blue],
+    [red, null, null, null, null, null, null, null, null, null, null, blue],
+    [null, null, null, null, null, null, null, null, null, null, null, blue],
   ]
 
   const player = new Player(sceneSize(scene).mul(new Vector2(0.5, 0.5)), 2);
@@ -279,5 +360,4 @@ if (ctx === null)
 //Separete files for classes like Vector2, Player, Game...
 //Fix imports (probably need server)
 //Create class that constains extension methods for Context type
-//Refactor testRay function (too many things are going in there)
 
