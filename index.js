@@ -3,7 +3,7 @@ const EPS = 1e-6;
 const FOV = Math.PI / 2;
 const CLIPPING_DISTANCE = 0.8;
 const PLAYER_MOVE_STEP = 0.3;
-const RAYS_COUNT = 200;
+const RAYS_COUNT = 300;
 class Vector2 {
     x;
     y;
@@ -170,16 +170,17 @@ function renderScene(ctx, scene, player) {
     for (let i = 0; i < RAYS_COUNT; i++) {
         const p = v1.lerp(v2, i / RAYS_COUNT);
         const stopPoint = castRay(player.position, p, scene);
+        const stopPointAngle = Math.atan2(stopPoint.y - player.position.y, stopPoint.x - player.position.x);
         const tilePos = getTilePositionBasedOnHittingPoint(player.position, stopPoint);
         if (isInsideScene(stopPoint, scene) && isInsideScene(tilePos, scene)) {
             const d = stopPoint.distanceTo(player.position);
-            const stripHeight = canvasHeight / d;
+            const stripHeight = (canvasHeight / (d * Math.cos(stopPointAngle - player.direction)));
             let wallColor = scene[tilePos.y][tilePos.x];
             if (!wallColor)
                 break;
             wallColor = wallColor.scale(1 / d);
             ctx.fillStyle = wallColor ? wallColor.toRGBAString() : '';
-            const rectY = (canvasHeight - stripHeight) * 0.3;
+            const rectY = (canvasHeight - stripHeight) * 0.5;
             ctx.fillRect(i * stripWidth, rectY, stripWidth, stripHeight);
         }
     }
@@ -262,7 +263,7 @@ if (ctx === null)
         [red, null, null, null, null, null, null, null, null, null, null, blue],
         [null, null, null, null, null, null, null, null, null, null, null, blue],
     ];
-    const player = new Player(sceneSize(scene).mul(new Vector2(0.5, 0.5)), 2);
+    const player = new Player(sceneSize(scene).mul(new Vector2(0.8, 0.8)), Math.PI / 2);
     window.addEventListener("keypress", (e) => {
         switch (e.key) {
             case 'a':
